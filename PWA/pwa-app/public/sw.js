@@ -32,7 +32,8 @@ self.addEventListener("activate", (event) => {
 
 // Fetch step
 self.addEventListener("fetch", (event) => {
-  event.respondWith(
+  if(!navigator.onLine){
+    event.respondWith(
     caches.match(event.request).then((resp) => {
       return resp || fetch(event.request).catch(() => {
         // Optional fallback (e.g. if offline and file not cached)
@@ -42,4 +43,5 @@ self.addEventListener("fetch", (event) => {
       });
     })
   );
+  }
 });
