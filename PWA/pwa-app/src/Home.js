@@ -28,12 +28,33 @@ const LABELS = [
   'Zelkova serrata'
 ];
 
-export default function Home() {
+export default function Home({ addToHistory }) {
   const [preview, setPreview] = useState(null);
   const [prediction, setPrediction] = useState(null);
   const [loading, setLoading] = useState(false);
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
+
+  const openCamera = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      const videoElement = videoRef.current;
+      videoElement.srcObject = stream;
+    } catch (err) {
+      console.error("Camera access denied:", err);
+    }
+  };
+
+  const captureImage = async () => {
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext("2d");
+    
+    ctx.drawImage(video, 0, 0, 224, 224);
+    const dataURL = canvas.toDataURL("image/png");
+    setPreview(dataURL);
+    await runModel(dataURL);
+  };
 
   const handleFileChange = async (event) => {
     const file = event.target.files[0];
@@ -49,78 +70,72 @@ export default function Home() {
     setPrediction(null);
     
     try {
-      // 1. Load model
-      const session = await ort.InferenceSession.create("/modelo_finalori.onnx"); //Usar modelo_finalori.onnx o modelofinalalt.onnx
+      const session = await ort.InferenceSession.create("/modelo_final.onnx");
 
-      // 2. Load image
       const image = new Image();
       image.src = imageSrc;
-      await new Promise((resolve, reject) => {
-        image.onload = resolve;
-        image.onerror = reject;
-      });
+      await new Promise((resolve) => (image.onload = resolve));
 
-      // 3. Prepare image (224x224)
       const canvas = canvasRef.current;
       const ctx = canvas.getContext("2d");
-      ctx.clearRect(0, 0, 224, 224);
-      ctx.drawImage(image, 0, 0, 224, 224);
+      const SIZE = 224;
       
-      // 4. Get image data
-      const imageData = ctx.getImageData(0, 0, 224, 224);
-      const data = imageData.data;
+      ctx.drawImage(image, 0, 0, SIZE, SIZE);
+      const imgData = ctx.getImageData(0, 0, SIZE, SIZE);
+
+      const data = Float32Array.from(imgData.data)
+        .filter((_, i) => i % 4 !== 3);
+
+      const inputTensor = new ort.Tensor("float32", data, [1, SIZE, SIZE, 3]);
+      const feeds = { input: inputTensor };
+      const output = await session.run(feeds);
+      const outputName = Object.keys(output)[0];
+      const result = output[outputName].data;
+
+      const exp = result.map((v) => Math.exp(v));
+      const sum = exp.reduce((a, b) => a + b, 0);
+      const probs = exp.map((v) => v / sum);
+
+      // Debug: print the full softmax vector
+      console.log("=== Softmax Probabilities ===");
+      LABELS.forEach((label, i) => {
+        console.log(`${label.padEnd(35)}: ${probs[i].toFixed(6)}`);
+      });
+      console.log("=============================");
+
+      const maxIdx = probs.indexOf(Math.max(...probs));
+      const predictedLabel = LABELS[maxIdx];
+      const accuracy_cal = (probs[maxIdx] * 1000).toFixed(1);
+      const accuracy = (accuracy_cal >= 100) ? 100 : accuracy_cal;
       
-      // 5. Create tensor - SIMPLE: 0-255 range, RGB order, shape [1, 224, 224, 3]
-      const tensorData = new Float32Array(1 * 224 * 224 * 3);
-      let index = 0;
-      
-      for (let i = 0; i < data.length; i += 4) {
-        tensorData[index++] = data[i];       // R (0-255)
-        tensorData[index++] = data[i + 1];   // G (0-255)
-        tensorData[index++] = data[i + 2];   // B (0-255)
-        // Skip alpha channel
+      // Show raw math too
+      console.log("Predicted index:", maxIdx);
+      console.log("Predicted label:", predictedLabel);
+      console.log("Confidence (prob * 1000):", accuracy, "%");
+      console.log("Raw sum of exp() terms:", sum);
+
+      // Create history item
+      const historyItem = {
+        species: predictedLabel,
+        accuracy: accuracy,
+        timestamp: new Date().toLocaleString()
+      };
+
+      // Save to history if addToHistory function is provided
+      if (addToHistory) {
+        addToHistory(historyItem);
       }
 
-      const inputTensor = new ort.Tensor("float32", tensorData, [1, 224, 224, 3]);
-
-      // 6. Run model
-      const feeds = { "input": inputTensor };
-      const results = await session.run(feeds);
-      const output = results["dense_1"].data;
-      
-      // 7. Get predictions
-      const expScores = output.map(score => Math.exp(score));
-      const sumExp = expScores.reduce((a, b) => a + b, 0);
-      const probabilities = expScores.map(score => score / sumExp);
-      
-      // 8. Find best prediction
-      let maxProb = 0;
-      let maxIndex = 0;
-      probabilities.forEach((prob, index) => {
-        if (prob > maxProb) {
-          maxProb = prob;
-          maxIndex = index;
-        }
-      });
-      
-      const confidence = (maxProb * 100).toFixed(2);
-      const label = LABELS[maxIndex];
-      
       setPrediction({ 
-        label, 
-        confidence,
-        allProbabilities: probabilities.map((p, i) => ({
-          label: LABELS[i],
-          probability: (p * 100).toFixed(2)
-        })).sort((a, b) => b.probability - a.probability)
+        label: predictedLabel, 
+        accuracy: accuracy
       });
-      
-    } catch (error) {
-      console.error("Error:", error);
+    } catch (err) {
+      console.error("Model inference error:", err);
       setPrediction({ 
         label: "Error", 
-        confidence: "0",
-        error: error.message 
+        accuracy: "0",
+        error: err.message 
       });
     } finally {
       setLoading(false);
@@ -129,10 +144,38 @@ export default function Home() {
 
   return (
     <div style={{ textAlign: "center", marginTop: "2rem", padding: "1rem" }}>
-      <h1>Tree Species Classifier </h1>
+      <h1>Tree Species Classification</h1>
 
       <div style={{ marginBottom: "2rem" }}>
-        <h3>Upload a tree image:</h3>
+        <Button 
+          variant="success" 
+          onClick={openCamera}
+          style={{ marginRight: "1rem" }}
+        >
+          Open Camera
+        </Button>
+        <Button 
+          variant="primary" 
+          onClick={captureImage}
+          disabled={!videoRef.current?.srcObject}
+        >
+          Capture Image
+        </Button>
+        <br />
+        <video 
+          id="cameraView" 
+          ref={videoRef} 
+          autoPlay 
+          playsInline 
+          width="300" 
+          style={{ border: "1px solid #ccc", marginTop: "1rem" }}
+        />
+      </div>
+
+      <hr />
+
+      <div style={{ marginBottom: "2rem" }}>
+        <h3>Or upload an image:</h3>
         <input 
           type="file" 
           accept="image/*" 
@@ -149,49 +192,56 @@ export default function Home() {
             alt="preview" 
             width="224" 
             height="224" 
-            style={{ border: "1px solid #ccc", borderRadius: "8px" }}
+            style={{ 
+              border: "1px solid #ccc", 
+              borderRadius: "8px",
+              objectFit: "cover"
+            }}
           />
         </div>
       )}
 
-      <canvas ref={canvasRef} width="224" height="224" style={{ display: "none" }} />
+      <canvas 
+        ref={canvasRef} 
+        width="224" 
+        height="224" 
+        style={{ display: "none" }} 
+      />
 
-      {loading && <p>Analyzing tree species...</p>}
+      {loading && (
+        <div style={{ margin: "2rem 0" }}>
+          <p>Analyzing tree species...</p>
+        </div>
+      )}
 
       {prediction && !loading && (
-        <div style={{ 
-          marginTop: "1.5rem", 
-          padding: "1.5rem", 
-          backgroundColor: "#f8f9fa", 
-          borderRadius: "8px",
-          border: "1px solid #dee2e6"
-        }}>
-          {prediction.error ? (
-            <div>
-              <h3 style={{ color: "#dc3545" }}>Error</h3>
-              <p>{prediction.error}</p>
-            </div>
-          ) : (
-            <>
-              <h3>Prediction Result:</h3>
-              <p style={{ fontSize: "1.2rem" }}>
-                <strong>Species:</strong> {prediction.label}<br />
-                <strong>Confidence:</strong> {prediction.confidence}%
-              </p>
-              
-              <h4>Top Predictions:</h4>
-              {prediction.allProbabilities.slice(0, 3).map((item, index) => (
-                <div key={index} style={{ 
-                  margin: "0.5rem 0",
-                  padding: "0.5rem",
-                  backgroundColor: index === 0 ? "#e7f3ff" : "transparent",
-                  borderRadius: "4px"
-                }}>
-                  {index + 1}. {item.label}: {item.probability}%
-                </div>
-              ))}
-            </>
-          )}
+        <div style={{ marginTop: "1.5rem" }}>
+          <h3>Identification Result</h3>
+          <div style={{
+            backgroundColor: "#f8f9fa",
+            padding: "1.5rem",
+            borderRadius: "8px",
+            border: "1px solid #dee2e6",
+            display: "inline-block",
+            minWidth: "300px",
+            textAlign: "center"
+          }}>
+            <p style={{ 
+              fontSize: "1.3rem", 
+              margin: "0 0 0.5rem 0",
+              fontWeight: "bold",
+              color: "#212529"
+            }}>
+              Species: {prediction.label}
+            </p>
+            <p style={{ 
+              fontSize: "1.1rem", 
+              margin: 0,
+              color: "#495057"
+            }}>
+              Accuracy: {prediction.accuracy}%
+            </p>
+          </div>
         </div>
       )}
     </div>
