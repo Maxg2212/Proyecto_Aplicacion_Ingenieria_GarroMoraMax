@@ -1,5 +1,4 @@
 import React, { useState, useRef } from "react";
-import Button from "react-bootstrap/Button";
 import * as ort from "onnxruntime-web";
 
 const LABELS = [
@@ -32,29 +31,7 @@ export default function Home({ addToHistory }) {
   const [preview, setPreview] = useState(null);
   const [prediction, setPrediction] = useState(null);
   const [loading, setLoading] = useState(false);
-  const videoRef = useRef(null);
   const canvasRef = useRef(null);
-
-  const openCamera = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-      const videoElement = videoRef.current;
-      videoElement.srcObject = stream;
-    } catch (err) {
-      console.error("Camera access denied:", err);
-    }
-  };
-
-  const captureImage = async () => {
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext("2d");
-    
-    ctx.drawImage(video, 0, 0, 224, 224);
-    const dataURL = canvas.toDataURL("image/png");
-    setPreview(dataURL);
-    await runModel(dataURL);
-  };
 
   const handleFileChange = async (event) => {
     const file = event.target.files[0];
@@ -147,35 +124,7 @@ export default function Home({ addToHistory }) {
       <h1>Tree Species Classification</h1>
 
       <div style={{ marginBottom: "2rem" }}>
-        <Button 
-          variant="success" 
-          onClick={openCamera}
-          style={{ marginRight: "1rem" }}
-        >
-          Open Camera
-        </Button>
-        <Button 
-          variant="primary" 
-          onClick={captureImage}
-          disabled={!videoRef.current?.srcObject}
-        >
-          Capture Image
-        </Button>
-        <br />
-        <video 
-          id="cameraView" 
-          ref={videoRef} 
-          autoPlay 
-          playsInline 
-          width="300" 
-          style={{ border: "1px solid #ccc", marginTop: "1rem" }}
-        />
-      </div>
-
-      <hr />
-
-      <div style={{ marginBottom: "2rem" }}>
-        <h3>Or upload an image:</h3>
+        <h3>Upload or capture a tree image:</h3>
         <input 
           type="file" 
           accept="image/*" 

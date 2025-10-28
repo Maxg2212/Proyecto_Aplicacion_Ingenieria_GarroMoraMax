@@ -1,4 +1,4 @@
-// App.js (with routing and About page)
+// App.js (with green navbar)
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
 import { Navbar, Nav, Container } from 'react-bootstrap';
@@ -37,25 +37,22 @@ function App() {
 
   return (
     <Router>
-      <Navbar bg="light" expand="lg">
+      <Navbar bg="success" variant="dark">
         <Container>
           <Navbar.Brand as={Link} to="/">
             Tree Identifier
           </Navbar.Brand>
-          <Navbar.Toggle aria-controls="basic-navbar-nav" />
-          <Navbar.Collapse id="basic-navbar-nav">
-            <Nav className="me-auto">
-              <Nav.Link as={Link} to="/">
-                Home
-              </Nav.Link>
-              <Nav.Link as={Link} to="/history">
-                History
-              </Nav.Link>
-              <Nav.Link as={Link} to="/about">
-                About
-              </Nav.Link>
-            </Nav>
-          </Navbar.Collapse>
+          <Nav className="me-auto">
+            <Nav.Link as={Link} to="/">
+              Home
+            </Nav.Link>
+            <Nav.Link as={Link} to="/history">
+              History
+            </Nav.Link>
+            <Nav.Link as={Link} to="/about">
+              About
+            </Nav.Link>
+          </Nav>
         </Container>
       </Navbar>
 
