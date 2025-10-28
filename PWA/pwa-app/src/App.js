@@ -1,9 +1,10 @@
-// App.js (with routing)
+// App.js (with routing and About page)
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
 import { Navbar, Nav, Container } from 'react-bootstrap';
 import Home from './Home';
 import Historial from './Historial';
+import About from './About';
 
 function App() {
   const [history, setHistory] = useState([]);
@@ -50,6 +51,9 @@ function App() {
               <Nav.Link as={Link} to="/history">
                 History
               </Nav.Link>
+              <Nav.Link as={Link} to="/about">
+                About
+              </Nav.Link>
             </Nav>
           </Navbar.Collapse>
         </Container>
@@ -69,6 +73,10 @@ function App() {
                 clearHistory={clearHistory} 
               />
             } 
+          />
+          <Route 
+            path="/about" 
+            element={<About />} 
           />
         </Routes>
       </Container>
