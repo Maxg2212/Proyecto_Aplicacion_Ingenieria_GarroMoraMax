@@ -32,6 +32,7 @@ export default function Historial({ history, clearHistory }) {
                   <th>Date & Time</th>
                   <th>Species</th>
                   <th>Accuracy</th>
+                  <th>Location</th>
                 </tr>
               </thead>
               <tbody>
@@ -40,6 +41,12 @@ export default function Historial({ history, clearHistory }) {
                     <td>{item.timestamp}</td>
                     <td style={{ fontWeight: 'bold' }}>{item.species}</td>
                     <td>{item.accuracy}%</td>
+                    <td>
+                      {item.location ? 
+                        `${item.location.latitude.toFixed(4)}, ${item.location.longitude.toFixed(4)}` : 
+                        'No location'
+                      }
+                    </td>
                   </tr>
                 ))}
               </tbody>

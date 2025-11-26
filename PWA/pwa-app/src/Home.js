@@ -1,5 +1,7 @@
 import React, { useState, useRef } from "react";
+import Button from "react-bootstrap/Button";
 import * as ort from "onnxruntime-web";
+import EXIF from 'exif-js';
 
 const LABELS = [
   'Acer palmatum',
@@ -27,6 +29,44 @@ const LABELS = [
   'Zelkova serrata'
 ];
 
+// EXIF location extraction
+const convertDMSToDD = (dms, ref) => {
+  if (!dms) return null;
+  const degrees = dms[0];
+  const minutes = dms[1];
+  const seconds = dms[2];
+  let dd = degrees + (minutes / 60) + (seconds / 3600);
+  if (ref === 'S' || ref === 'W') dd = dd * -1;
+  return parseFloat(dd.toFixed(6));
+};
+
+const getLocationFromImage = (file) => {
+  return new Promise((resolve) => {
+    EXIF.getData(file, function() {
+      try {
+        const lat = EXIF.getTag(this, 'GPSLatitude');
+        const latRef = EXIF.getTag(this, 'GPSLatitudeRef');
+        const lng = EXIF.getTag(this, 'GPSLongitude');
+        const lngRef = EXIF.getTag(this, 'GPSLongitudeRef');
+        
+        if (lat && lng && latRef && lngRef) {
+          const latitude = convertDMSToDD(lat, latRef);
+          const longitude = convertDMSToDD(lng, lngRef);
+          resolve({ 
+            latitude, 
+            longitude,
+            source: 'image_metadata'
+          });
+        } else {
+          resolve(null);
+        }
+      } catch (error) {
+        resolve(null);
+      }
+    });
+  });
+};
+
 export default function Home({ addToHistory }) {
   const [preview, setPreview] = useState(null);
   const [prediction, setPrediction] = useState(null);
@@ -38,11 +78,20 @@ export default function Home({ addToHistory }) {
     if (file) {
       const imgURL = URL.createObjectURL(file);
       setPreview(imgURL);
-      await runModel(imgURL);
+      
+      // Extract location from image EXIF data only
+      let location = null;
+      try {
+        location = await getLocationFromImage(file);
+      } catch (error) {
+        console.log('Error extracting location from EXIF:', error);
+      }
+      
+      await runModel(imgURL, location);
     }
   };
 
-  const runModel = async (imageSrc) => {
+  const runModel = async (imageSrc, location) => {
     setLoading(true);
     setPrediction(null);
     
@@ -73,39 +122,26 @@ export default function Home({ addToHistory }) {
       const sum = exp.reduce((a, b) => a + b, 0);
       const probs = exp.map((v) => v / sum);
 
-      // Debug: print the full softmax vector
-      console.log("=== Softmax Probabilities ===");
-      LABELS.forEach((label, i) => {
-        console.log(`${label.padEnd(35)}: ${probs[i].toFixed(6)}`);
-      });
-      console.log("=============================");
-
       const maxIdx = probs.indexOf(Math.max(...probs));
       const predictedLabel = LABELS[maxIdx];
       const accuracy_cal = (probs[maxIdx] * 1000).toFixed(1);
       const accuracy = (accuracy_cal >= 100) ? 100 : accuracy_cal;
-      
-      // Show raw math too
-      console.log("Predicted index:", maxIdx);
-      console.log("Predicted label:", predictedLabel);
-      console.log("Confidence (prob * 1000):", accuracy, "%");
-      console.log("Raw sum of exp() terms:", sum);
 
-      // Create history item
       const historyItem = {
         species: predictedLabel,
         accuracy: accuracy,
-        timestamp: new Date().toLocaleString()
+        timestamp: new Date().toLocaleString(),
+        location: location
       };
 
-      // Save to history if addToHistory function is provided
       if (addToHistory) {
         addToHistory(historyItem);
       }
 
       setPrediction({ 
         label: predictedLabel, 
-        accuracy: accuracy
+        accuracy: accuracy,
+        location: location
       });
     } catch (err) {
       console.error("Model inference error:", err);
@@ -124,13 +160,16 @@ export default function Home({ addToHistory }) {
       <h1>Tree Species Classification</h1>
 
       <div style={{ marginBottom: "2rem" }}>
-        <h3>Upload or capture a tree image:</h3>
+        <h3>Upload a tree image:</h3>
         <input 
           type="file" 
           accept="image/*" 
           onChange={handleFileChange}
           disabled={loading}
         />
+        <div style={{ fontSize: "0.9rem", color: "#666", marginTop: "0.5rem" }}>
+          Location will be extracted from image EXIF data if available
+        </div>
       </div>
 
       {preview && (
@@ -150,12 +189,7 @@ export default function Home({ addToHistory }) {
         </div>
       )}
 
-      <canvas 
-        ref={canvasRef} 
-        width="224" 
-        height="224" 
-        style={{ display: "none" }} 
-      />
+      <canvas ref={canvasRef} width="224" height="224" style={{ display: "none" }} />
 
       {loading && (
         <div style={{ margin: "2rem 0" }}>
@@ -190,6 +224,24 @@ export default function Home({ addToHistory }) {
             }}>
               Accuracy: {prediction.accuracy}%
             </p>
+            {prediction.location ? (
+              <p style={{ 
+                fontSize: "0.9rem", 
+                margin: "0.5rem 0 0 0",
+                color: "#28a745"
+              }}>
+                Location: {prediction.location.latitude.toFixed(4)}, {prediction.location.longitude.toFixed(4)}
+              </p>
+            ) : (
+              <p style={{ 
+                fontSize: "0.9rem", 
+                margin: "0.5rem 0 0 0",
+                color: "#6c757d",
+                fontStyle: "italic"
+              }}>
+                No location data in image
+              </p>
+            )}
           </div>
         </div>
       )}
